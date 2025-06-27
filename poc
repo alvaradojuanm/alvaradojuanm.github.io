@@ -193,3 +193,12 @@ services:
     image: ollama/ollama:rocm
     depends_on:
       - ollama-gpu-amd
+
+
+
+
+docker run -it --rm --network redn8n curlimages/curl curl -v https://generativelanguage.googleapis.com
+
+docker exec -it n8n sh
+curl -v https://generativelanguage.googleapis.com
+
