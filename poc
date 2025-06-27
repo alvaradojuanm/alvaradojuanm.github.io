@@ -202,3 +202,30 @@ docker run -it --rm --network redn8n curlimages/curl curl -v https://generativel
 docker exec -it n8n sh
 curl -v https://generativelanguage.googleapis.com
 
+
+************
+
+
+docker run -it --rm --network redn8n \
+  -e HTTP_PROXY=http://10.132.222.73:9090 \
+  -e http_proxy=http://10.132.222.73:9090 \
+  -e HTTPS_PROXY=https://10.132.222.73:9090 \
+  -e https_proxy=https://10.132.222.73:9090 \
+  -e NO_PROXY=localhost,127.0.0.1,postgres,postgres-custom,qdrant,ollama,n8n,n8n-import \
+  curlimages/curl curl -v https://generativelanguage.googleapis.com
+
+
+
+***************
+
+docker run -it --rm --network redn8n \
+  -e HTTPS_PROXY=https://10.132.222.73:9090 \
+  -e https_proxy=https://10.132.222.73:9090 \
+  -e NO_PROXY=localhost,127.0.0.1,postgres,postgres-custom,qdrant,ollama,n8n,n8n-import \
+  curlimages/curl curl -v https://generativelanguage.googleapis.com
+
+
+****************
+
+
+docker run -it --rm --network redn8n curlimages/curl curl -v https://generativelanguage.googleapis.com
