@@ -1,0 +1,36 @@
+version: "3.7"
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: always
+    networks:
+      - n8n_poc_bank
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
+      - N8N_PORT=5678
+      - NODE_ENV=production
+      # Quita todo lo relacionado con SSL/HTTPS/webhook external
+    volumes:
+      - n8n_poc_bank_data:/home/node/.n8n
+      - n8n_poc_bank_files:/files
+
+networks:
+  n8n_poc_bank:
+    driver: bridge
+
+volumes:
+  n8n_poc_bank_data:
+  n8n_poc_bank_files:
+
+
+
+
+
+# Zona horaria para n8n (ej. America/New_York, Europe/Madrid, etc.)
+GENERIC_TIMEZONE=America/New_York
+
+
