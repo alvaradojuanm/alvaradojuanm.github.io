@@ -2,7 +2,6 @@ volumes:
   n8n_storage:
   postgres_storage:
   postgres_custom_data:
-  ollama_storage:
   qdrant_storage:
 
 networks:
@@ -15,12 +14,11 @@ x-n8n: &service-n8n
     # Configuración de Proxy Corporativo para Acceso a Internet
     - HTTP_PROXY=http://10.132.222.73:9090
     - http_proxy=http://10.132.222.73:9090
-    - HTTPS_PROXY=https://10.132.222.73:9090
-    - https_proxy=https://10.132.222.73:9090
+    - HTTPS_PROXY=http://10.132.222.73:9090
+    - https_proxy=http://10.132.222.73:9090
     - FTP_PROXY=http://10.132.222.73:9090
     - ftp_proxy=http://10.132.222.73:9090
-    - NO_PROXY=localhost,127.0.0.1,postgres,postgres-custom,qdrant,ollama,n8n,n8n-import
-    #- no_proxy=localhost,127.0.0.1,postgres,postgres-custom,qdrant,ollama,n8n,n8n-import
+    - NO_PROXY=localhost,127.0.0.1,postgres,postgres-custom,qdrant,n8n,n8n-import
 
     # Base de datos N8N
     - DB_TYPE=postgresdb
@@ -48,32 +46,9 @@ x-n8n: &service-n8n
     - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
     - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
 
-    # Configuración de Ollama y Qdrant
-    - OLLAMA_HOST=ollama:11434
-    - OLLAMA_URL=http://ollama:11434
+    # Qdrant
     - QDRANT_HOST=qdrant:6333
     - QDRANT_URL=http://qdrant:6333
-
-x-ollama: &service-ollama
-  image: ollama/ollama:latest
-  container_name: ollama
-  networks: ['redn8n']
-  restart: unless-stopped
-  ports:
-    - 11434:11434
-  volumes:
-    - ollama_storage:/root/.ollama
-
-x-init-ollama: &init-ollama
-  image: ollama/ollama:latest
-  networks: ['redn8n']
-  container_name: ollama-pull-llama
-  volumes:
-    - ollama_storage:/root/.ollama
-  entrypoint: /bin/sh
-  command:
-    - "-c"
-    - "sleep 3; ollama run llama3.2"
 
 services:
   postgres:
@@ -134,7 +109,7 @@ services:
       - n8n_storage:/home/node/.n8n
       - ./n8n/backup:/backup
       - ./shared:/data/shared
-      - /home/documentos:/app/mis_documentos_host
+      - /home/documentos:/home/documentos
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,47 +126,3 @@ services:
       - 6333:6333
     volumes:
       - qdrant_storage:/qdrant/storage
-
-  ollama-cpu:
-    profiles: ["cpu"]
-    <<: *service-ollama
-
-  ollama-gpu:
-    profiles: ["gpu-nvidia"]
-    <<: *service-ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
-  ollama-gpu-amd:
-    profiles: ["gpu-amd"]
-    <<: *service-ollama
-    image: ollama/ollama:rocm
-    devices:
-      - "/dev/kfd"
-      - "/dev/dri"
-
-  ollama-pull-llama-cpu:
-    profiles: ["cpu"]
-    <<: *init-ollama
-    depends_on:
-      - ollama-cpu
-
-  ollama-pull-llama-gpu:
-    profiles: ["gpu-nvidia"]
-    <<: *init-ollama
-    depends_on:
-      - ollama-gpu
-
-  ollama-pull-llama-gpu-amd:
-    profiles: ["gpu-amd"]
-    <<: *init-ollama
-    image: ollama/ollama:rocm
-    depends_on:
-      - ollama-gpu-amd
-
-
