@@ -1,4 +1,3 @@
-
 volumes:
   n8n_storage:
   postgres_storage:
@@ -13,39 +12,47 @@ x-n8n: &service-n8n
   image: n8nio/n8n:latest
   networks: ['redn8n']
   environment:
+    # Configuración de Proxy Corporativo para Acceso a Internet
+    - HTTP_PROXY=http://10.132.222.73:9090
+    - http_proxy=http://10.132.222.73:9090
+    - HTTPS_PROXY=https://10.132.222.73:9090
+    - https_proxy=https://10.132.222.73:9090
+    - FTP_PROXY=http://10.132.222.73:9090
+    - ftp_proxy=http://10.132.222.73:9090
+    - NO_PROXY=localhost,127.0.0.1,postgres,postgres-custom,qdrant,ollama,n8n,n8n-import
+    - no_proxy=localhost,127.0.0.1,postgres,postgres-custom,qdrant,ollama,n8n,n8n-import
+
     # Base de datos N8N
     - DB_TYPE=postgresdb
     - DB_POSTGRESDB_HOST=postgres
     - DB_POSTGRESDB_USER=${POSTGRES_USER}
     - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+
     # Base de datos adicional para flujos personalizados
     - CUSTOM_DB_HOST=postgres-custom
     - CUSTOM_DB_USER=${CUSTOM_POSTGRES_USER}
     - CUSTOM_DB_PASSWORD=${CUSTOM_POSTGRES_PASSWORD}
     - CUSTOM_DB_DATABASE=${CUSTOM_POSTGRES_DB}
+
     # Zona Horaria
     - TZ=America/Caracas
+
     # Configuración de N8N
     - N8N_SECURE_COOKIE=false
     - N8N_RUNNERS_ENABLED=true
     - N8N_DIAGNOSTICS_ENABLED=false
     - N8N_PERSONALIZATION_ENABLED=false
     - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+
     # Configuración de Seguridad
-    - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY} # Asegúrate de definir esta variable en un archivo .env
-    - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET} # Asegúrate de definir esta variable en un archivo .env
-    # Configuración de Ollama
+    - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+    - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+
+    # Configuración de Ollama y Qdrant
     - OLLAMA_HOST=ollama:11434
     - OLLAMA_URL=http://ollama:11434
     - QDRANT_HOST=qdrant:6333
     - QDRANT_URL=http://qdrant:6333
-    # Configuración de Proxy (CORREGIDO: Eliminadas las comillas dobles alrededor de la URL)
-    - HTTPS_PROXY=https://10.132.222.73:9090
-    - https_proxy=https://10.132.222.73:9090
-    - HTTP_PROXY=http://10.132.222.73:9090
-    - http_proxy=http://10.132.222.73:9090
-    - FTP_PROXY=http://10.132.222.73:9090
-
 
 x-ollama: &service-ollama
   image: ollama/ollama:latest
@@ -64,16 +71,6 @@ x-init-ollama: &init-ollama
   volumes:
     - ollama_storage:/root/.ollama
   entrypoint: /bin/sh
- # environment:
-    # OLLAMA_HOST no es necesario aquí para la conexión al servicio ollama dentro de la misma red
-    # La conexión a ollama se realizará directamente por el nombre del servicio en la red Docker
-    # OLLAMA_HOST=ollama:11434 # ELIMINADO para evitar conflicto con proxy
-    # Configuración de Proxy (CORREGIDO: Eliminadas las comillas dobles alrededor de la URL)
-    #- HTTPS_PROXY=https://10.132.222.73:9090
-    #- https_proxy=https://10.132.222.73:9090
-    #- HTTP_PROXY=http://10.132.222.73:9090
-    #- http_proxy=http://10.132.222.73:9090
-    #- FTP_PROXY=http://10.132.222.73:9090
   command:
     - "-c"
     - "sleep 3; ollama run llama3.2"
@@ -96,7 +93,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # Nueva base de datos PostgreSQL personalizada
   postgres-custom:
     image: postgres:16-alpine
     container_name: postgres-custom
@@ -138,10 +134,7 @@ services:
       - n8n_storage:/home/node/.n8n
       - ./n8n/backup:/backup
       - ./shared:/data/shared
-      # --- INICIO DE LA SUGERENCIA ---
-      # Monta la carpeta /home/documentos del host en /app/mis_documentos_host dentro del contenedor n8n
       - /home/documentos:/app/mis_documentos_host
-      # --- FIN DE LA SUGERENCIA ---
     depends_on:
       postgres:
         condition: service_healthy
@@ -195,8 +188,8 @@ services:
       - ollama-gpu
 
   ollama-pull-llama-gpu-amd:
-    profiles: [gpu-amd]
+    profiles: ["gpu-amd"]
     <<: *init-ollama
     image: ollama/ollama:rocm
     depends_on:
-     - ollama-gpu-amd
+      - ollama-gpu-amd
