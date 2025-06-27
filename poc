@@ -1,36 +1,202 @@
-version: "3.7"
-
-services:
-  n8n:
-    image: docker.n8n.io/n8nio/n8n:latest
-    restart: always
-    networks:
-      - n8n_poc_bank
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=false
-      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
-      - N8N_PORT=5678
-      - NODE_ENV=production
-      # Quita todo lo relacionado con SSL/HTTPS/webhook external
-    volumes:
-      - n8n_poc_bank_data:/home/node/.n8n
-      - n8n_poc_bank_files:/files
-
-networks:
-  n8n_poc_bank:
-    driver: bridge
 
 volumes:
-  n8n_poc_bank_data:
-  n8n_poc_bank_files:
+  n8n_storage:
+  postgres_storage:
+  postgres_custom_data:
+  ollama_storage:
+  qdrant_storage:
+
+networks:
+  redn8n:
+
+x-n8n: &service-n8n
+  image: n8nio/n8n:latest
+  networks: ['redn8n']
+  environment:
+    # Base de datos N8N
+    - DB_TYPE=postgresdb
+    - DB_POSTGRESDB_HOST=postgres
+    - DB_POSTGRESDB_USER=${POSTGRES_USER}
+    - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    # Base de datos adicional para flujos personalizados
+    - CUSTOM_DB_HOST=postgres-custom
+    - CUSTOM_DB_USER=${CUSTOM_POSTGRES_USER}
+    - CUSTOM_DB_PASSWORD=${CUSTOM_POSTGRES_PASSWORD}
+    - CUSTOM_DB_DATABASE=${CUSTOM_POSTGRES_DB}
+    # Zona Horaria
+    - TZ=America/Caracas
+    # Configuración de N8N
+    - N8N_SECURE_COOKIE=false
+    - N8N_RUNNERS_ENABLED=true
+    - N8N_DIAGNOSTICS_ENABLED=false
+    - N8N_PERSONALIZATION_ENABLED=false
+    - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+    # Configuración de Seguridad
+    - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY} # Asegúrate de definir esta variable en un archivo .env
+    - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET} # Asegúrate de definir esta variable en un archivo .env
+    # Configuración de Ollama
+    - OLLAMA_HOST=ollama:11434
+    - OLLAMA_URL=http://ollama:11434
+    - QDRANT_HOST=qdrant:6333
+    - QDRANT_URL=http://qdrant:6333
+    # Configuración de Proxy (CORREGIDO: Eliminadas las comillas dobles alrededor de la URL)
+    - HTTPS_PROXY=https://10.132.222.73:9090
+    - https_proxy=https://10.132.222.73:9090
+    - HTTP_PROXY=http://10.132.222.73:9090
+    - http_proxy=http://10.132.222.73:9090
+    - FTP_PROXY=http://10.132.222.73:9090
 
 
+x-ollama: &service-ollama
+  image: ollama/ollama:latest
+  container_name: ollama
+  networks: ['redn8n']
+  restart: unless-stopped
+  ports:
+    - 11434:11434
+  volumes:
+    - ollama_storage:/root/.ollama
 
+x-init-ollama: &init-ollama
+  image: ollama/ollama:latest
+  networks: ['redn8n']
+  container_name: ollama-pull-llama
+  volumes:
+    - ollama_storage:/root/.ollama
+  entrypoint: /bin/sh
+ # environment:
+    # OLLAMA_HOST no es necesario aquí para la conexión al servicio ollama dentro de la misma red
+    # La conexión a ollama se realizará directamente por el nombre del servicio en la red Docker
+    # OLLAMA_HOST=ollama:11434 # ELIMINADO para evitar conflicto con proxy
+    # Configuración de Proxy (CORREGIDO: Eliminadas las comillas dobles alrededor de la URL)
+    #- HTTPS_PROXY=https://10.132.222.73:9090
+    #- https_proxy=https://10.132.222.73:9090
+    #- HTTP_PROXY=http://10.132.222.73:9090
+    #- http_proxy=http://10.132.222.73:9090
+    #- FTP_PROXY=http://10.132.222.73:9090
+  command:
+    - "-c"
+    - "sleep 3; ollama run llama3.2"
 
+services:
+  postgres:
+    image: postgres:16-alpine
+    hostname: postgres
+    networks: ['redn8n']
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+    volumes:
+      - postgres_storage:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-# Zona horaria para n8n (ej. America/New_York, Europe/Madrid, etc.)
-GENERIC_TIMEZONE=America/New_York
+  # Nueva base de datos PostgreSQL personalizada
+  postgres-custom:
+    image: postgres:16-alpine
+    container_name: postgres-custom
+    hostname: postgres-custom
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${CUSTOM_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${CUSTOM_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${CUSTOM_POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_custom_data:/var/lib/postgresql/data
+    networks:
+      - redn8n
 
+  n8n-import:
+    <<: *service-n8n
+    hostname: n8n-import
+    container_name: n8n-import
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - "n8n import:credentials --separate --input=/backup/credentials && n8n import:workflow --separate --input=/backup/workflows"
+    volumes:
+      - ./n8n/backup:/backup
+    depends_on:
+      postgres:
+        condition: service_healthy
 
+  n8n:
+    <<: *service-n8n
+    hostname: n8n
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - 5678:5678
+    volumes:
+      - n8n_storage:/home/node/.n8n
+      - ./n8n/backup:/backup
+      - ./shared:/data/shared
+      # --- INICIO DE LA SUGERENCIA ---
+      # Monta la carpeta /home/documentos del host en /app/mis_documentos_host dentro del contenedor n8n
+      - /home/documentos:/app/mis_documentos_host
+      # --- FIN DE LA SUGERENCIA ---
+    depends_on:
+      postgres:
+        condition: service_healthy
+      n8n-import:
+        condition: service_completed_successfully
+
+  qdrant:
+    image: qdrant/qdrant
+    hostname: qdrant
+    container_name: qdrant
+    networks: ['redn8n']
+    restart: unless-stopped
+    ports:
+      - 6333:6333
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  ollama-cpu:
+    profiles: ["cpu"]
+    <<: *service-ollama
+
+  ollama-gpu:
+    profiles: ["gpu-nvidia"]
+    <<: *service-ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ollama-gpu-amd:
+    profiles: ["gpu-amd"]
+    <<: *service-ollama
+    image: ollama/ollama:rocm
+    devices:
+      - "/dev/kfd"
+      - "/dev/dri"
+
+  ollama-pull-llama-cpu:
+    profiles: ["cpu"]
+    <<: *init-ollama
+    depends_on:
+      - ollama-cpu
+
+  ollama-pull-llama-gpu:
+    profiles: ["gpu-nvidia"]
+    <<: *init-ollama
+    depends_on:
+      - ollama-gpu
+
+  ollama-pull-llama-gpu-amd:
+    profiles: [gpu-amd]
+    <<: *init-ollama
+    image: ollama/ollama:rocm
+    depends_on:
+     - ollama-gpu-amd
